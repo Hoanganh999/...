@@ -1,7 +1,18 @@
 import https from 'https';
 
 export default function handler(req, res) {
-  // Chỉ chấp nhận phương thức GET từ client (truy cập bằng URL ?prompt=)
+  // 1. CẤU HÌNH HEADERS CORS (Thêm phần này vào đầu hàm)
+  res.setHeader('Access-Control-Allow-Credentials', true);
+  res.setHeader('Access-Control-Allow-Origin', '*'); // Cho phép TẤT CẢ các website khác gọi tới. Nếu muốn giới hạn, thay '*' bằng 'https://ten-mien-cua-ban.com'
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
+
+  // Xử lý request kiểm tra (Preflight Request) từ trình duyệt
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  // Chỉ chấp nhận phương thức GET từ client
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method Not Allowed. Use GET.' });
   }
@@ -11,14 +22,8 @@ export default function handler(req, res) {
     return res.status(400).json({ error: 'Missing "prompt" parameter.' });
   }
 
-  // Cấu hình payload chính xác theo định dạng API mới của bạn
   const postData = JSON.stringify({
-    messages: [
-      {
-        role: 'user',
-        content: prompt // Nhận câu hỏi động từ tham số ?prompt=
-      }
-    ],
+    messages: [{ role: 'user', content: prompt }],
     system_prompt: '',
     temperature: 0.9,
     top_k: 5,
@@ -27,7 +32,6 @@ export default function handler(req, res) {
     web_access: false
   });
 
-  // Cấu hình Host và Endpoint mới theo đúng cấu trúc XHR của bạn
   const options = {
     hostname: 'chatgpt-42.p.rapidapi.com',
     port: 443,
@@ -41,37 +45,23 @@ export default function handler(req, res) {
     }
   };
 
-  // Khởi tạo request kết nối trực tiếp đến RapidAPI
   const apiRequest = https.request(options, (apiResponse) => {
     let responseData = '';
-
-    // Nhận dữ liệu đổ về theo từng cụm dữ liệu (chunk)
-    apiResponse.on('data', (chunk) => {
-      responseData += chunk;
-    });
-
-    // Khi đã nhận xong toàn bộ dữ liệu phản hồi
+    apiResponse.on('data', (chunk) => { responseData += chunk; });
     apiResponse.on('end', () => {
       try {
         const jsonResponse = JSON.parse(responseData);
-        // Trả về kết quả JSON trực tiếp cho trình duyệt kèm HTTP Status gốc
         res.status(apiResponse.statusCode).json(jsonResponse);
       } catch (e) {
-        // Tránh lỗi sập Serverless (Crash) nếu API trả về chuỗi text lỗi không phải JSON
-        res.status(500).json({ 
-          error: 'Invalid JSON response from upstream API', 
-          raw: responseData 
-        });
+        res.status(500).json({ error: 'Invalid JSON response from upstream API', raw: responseData });
       }
     });
   });
 
-  // Xử lý kịch bản lỗi kết nối vật lý (ví dụ: RapidAPI bị sập, timeout mạng)
   apiRequest.on('error', (error) => {
     res.status(500).json({ error: 'Connection to API failed', message: error.message });
   });
 
-  // Đẩy dữ liệu lên endpoint và đóng luồng gửi dữ liệu
   apiRequest.write(postData);
   apiRequest.end();
 }
