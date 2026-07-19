@@ -1,14 +1,12 @@
 export default async function handler(req, res) {
-  // Chỉ cho phép phương thức GET thông qua URL query (?prompt=)
+  // Chỉ chấp nhận GET
   if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method Not Allowed. Use GET.' });
+    return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  // Lấy giá trị prompt từ URL query string
   const { prompt } = req.query;
-
   if (!prompt) {
-    return res.status(400).json({ error: 'Missing "prompt" parameter in URL.' });
+    return res.status(400).json({ error: 'Parameter "prompt" is required' });
   }
 
   const url = 'https://deepseek-r1-zero-ai-model-with-emergent-reasoning-ability.p.rapidapi.com/chat/completions';
@@ -18,18 +16,12 @@ export default async function handler(req, res) {
     headers: {
       'Content-Type': 'application/json',
       'x-rapidapi-host': 'deepseek-r1-zero-ai-model-with-emergent-reasoning-ability.p.rapidapi.com',
-      // Bảo mật: Nên đưa API key này vào Environment Variables trên Vercel thay vì để lộ trong code
       'x-rapidapi-key': '3a71ea9552msh5136feed2dfc371p15e354jsnac009ba1a9bb' 
     },
     body: JSON.stringify({
-      messages: [
-        {
-          role: 'user',
-          content: prompt // Truyền câu hỏi của người dùng vào đây
-        }
-      ],
+      messages: [{ role: 'user', content: prompt }],
       temperature: 0.7,
-      max_tokens: 2048,
+      max_tokens: 1024, // Giảm bớt số token để phản hồi nhanh hơn, tránh timeout 10s của Vercel
       stream: false,
       reasoning_effort: 'low'
     })
@@ -37,20 +29,24 @@ export default async function handler(req, res) {
 
   try {
     const apiResponse = await fetch(url, options);
-    const data = await apiResponse.json();
     
-    // Trả về kết quả trực tiếp cho client
-    return res.status(apiResponse.status).json(data);
-  } catch (error) {
-    return res.status(500).json({ error: 'Internal Server Error', details: error.message });
-  }
-}
+    // Kiểm tra nếu API từ RapidAPI trả về lỗi HTTP (ví dụ 401, 429, 500)
+    if (!apiResponse.ok) {
+      const errorText = await apiResponse.text();
+      return res.status(apiResponse.status).json({ 
+        error: `RapidAPI returned status ${apiResponse.status}`, 
+        details: errorText 
+      });
+    }
 
-    res.status(response.status).json(data);
-  } catch (err) {
-    res.status(500).json({
-      success: false,
-      error: err.message
+    const data = await apiResponse.json();
+    return res.status(200).json(data);
+
+  } catch (error) {
+    // Trả về JSON lỗi tường minh thay vì để hàm tự sập (crashed)
+    return res.status(500).json({ 
+      error: 'Serverless Function Execution Error', 
+      message: error.message 
     });
   }
 }
