@@ -17,7 +17,7 @@ export default async function handler(req, res) {
           "Content-Type": "application/json",
           "x-rapidapi-host":
             "deepseek-r1-zero-ai-model-with-emergent-reasoning-ability.p.rapidapi.com",
-          "x-rapidapi-key": process.env.RAPIDAPI_KEY
+          "x-rapidapi-key": "3a71ea9552msh5136feed2dfc371p15e354jsnac009ba1a9bb"
         },
         body: JSON.stringify({
           messages: [
