@@ -1,52 +1,71 @@
-export default async function handler(req, res) {
-  // Chỉ chấp nhận GET
+import https from 'https';
+
+export default function handler(req, res) {
+  // Chỉ chấp nhận phương thức GET từ client (truy cập bằng URL ?prompt=)
   if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
+    return res.status(405).json({ error: 'Method Not Allowed. Use GET.' });
   }
 
   const { prompt } = req.query;
   if (!prompt) {
-    return res.status(400).json({ error: 'Parameter "prompt" is required' });
+    return res.status(400).json({ error: 'Missing "prompt" parameter.' });
   }
 
-  const url = 'https://deepseek-r1-zero-ai-model-with-emergent-reasoning-ability.p.rapidapi.com/chat/completions';
-  
+  // Cấu hình payload y hệt dữ liệu bạn truyền vào xhr.send(data)
+  const postData = JSON.stringify({
+    messages: [
+      {
+        role: 'user',
+        content: prompt
+      }
+    ],
+    temperature: 0.7,
+    max_tokens: 2048,
+    stream: false,
+    reasoning_effort: 'low'
+  });
+
+  // Cấu hình endpoint và các Request Header
   const options = {
+    hostname: 'deepseek-r1-zero-ai-model-with-emergent-reasoning-ability.p.rapidapi.com',
+    port: 443,
+    path: '/chat/completions',
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
+      'x-rapidapi-key': '3a71ea9552msh5136feed2dfc371p15e354jsnac009ba1a9bb',
       'x-rapidapi-host': 'deepseek-r1-zero-ai-model-with-emergent-reasoning-ability.p.rapidapi.com',
-      'x-rapidapi-key': '3a71ea9552msh5136feed2dfc371p15e354jsnac009ba1a9bb' 
-    },
-    body: JSON.stringify({
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.7,
-      max_tokens: 1024, // Giảm bớt số token để phản hồi nhanh hơn, tránh timeout 10s của Vercel
-      stream: false,
-      reasoning_effort: 'low'
-    })
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(postData)
+    }
   };
 
-  try {
-    const apiResponse = await fetch(url, options);
-    
-    // Kiểm tra nếu API từ RapidAPI trả về lỗi HTTP (ví dụ 401, 429, 500)
-    if (!apiResponse.ok) {
-      const errorText = await apiResponse.text();
-      return res.status(apiResponse.status).json({ 
-        error: `RapidAPI returned status ${apiResponse.status}`, 
-        details: errorText 
-      });
-    }
+  // Khởi tạo request tương đương xhr.open() và các addEventListener
+  const apiRequest = https.request(options, (apiResponse) => {
+    let responseData = '';
 
-    const data = await apiResponse.json();
-    return res.status(200).json(data);
-
-  } catch (error) {
-    // Trả về JSON lỗi tường minh thay vì để hàm tự sập (crashed)
-    return res.status(500).json({ 
-      error: 'Serverless Function Execution Error', 
-      message: error.message 
+    // Nhận dữ liệu theo từng block (tương tự như readystatechange)
+    apiResponse.on('data', (chunk) => {
+      responseData += chunk;
     });
-  }
+
+    // Khi đã nhận toàn bộ dữ liệu (tương tự readyState === DONE)
+    apiResponse.on('end', () => {
+      try {
+        const jsonResponse = JSON.parse(responseData);
+        res.status(apiResponse.statusCode).json(jsonResponse);
+      } catch (e) {
+        // Tránh crash nếu dữ liệu trả về không phải JSON hợp lệ
+        res.status(500).json({ error: 'Invalid JSON response from API', raw: responseData });
+      }
+    });
+  });
+
+  // Xử lý lỗi kết nối đường truyền mạng
+  apiRequest.on('error', (error) => {
+    res.status(500).json({ error: 'Connection failed', message: error.message });
+  });
+
+  // Gửi dữ liệu đi tương đương xhr.send(data)
+  apiRequest.write(postData);
+  apiRequest.end();
 }
